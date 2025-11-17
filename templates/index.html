@@ -1,1 +1,507 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>GCC Maps Scraper — Final</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  :root{
+    --bg:#0b1220; --card:#10192b; --line:#1c2741; --text:#e8eef9; --muted:#9fb2d9;
+    --accent:#60a5fa; --success:#3aa675; --warn:#f59e0b; --danger:#ef4444;
+    --btn-bg:#0f1626; --shadow:0 6px 16px rgba(0,0,0,.45), 0 2px 4px rgba(0,0,0,.25);
+    --shadow-strong:0 10px 22px rgba(0,0,0,.55), 0 4px 8px rgba(0,0,0,.3);
+  }
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Noto Sans Arabic',Tahoma,Arial;margin:0;padding:0;background:var(--bg);color:var(--text)}
+  .wrap{max-width:1180px;margin:24px auto;padding:12px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;flex:1}
+  label{font-size:13px;color:var(--muted);display:block;margin-bottom:6px}
+  input,select,button{background:var(--btn-bg);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+  input,select{width:100%}
+  #map{height:420px;border-radius:14px;box-shadow:var(--shadow)}
+  table{width:100%;border-collapse:collapse}
+  th,td{border-bottom:1px solid var(--line);padding:6px 8px;font-size:12px;text-align:right}
+  th.sortable{cursor:pointer;user-select:none}
+  th.sortable .arrow{opacity:.5;font-size:10px;margin-inline-start:6px}
+  .progress{height:8px;background:#0f1626;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .bar{height:100%;background:var(--success);width:0%}
+  .muted{color:var(--muted);font-size:12px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+  td.num, th.num{direction:ltr;text-align:left}
+  .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+  .legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .legend .item{display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1;background:#0f1626;border:1px solid var(--line);border-radius:10px;padding:4px 8px}
+  .legend .dot{width:10px;height:10px;border-radius:50%}
+  .btn{position:relative;display:inline-flex;align-items:center;gap:8px;
+       border:1px solid transparent;background:#121a2e;color:var(--text);
+       padding:10px 14px;border-radius:12px;font-weight:600;letter-spacing:.2px;
+       box-shadow:var(--shadow); transform:translateY(0); transition:all .15s ease;}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .btn:hover{transform:translateY(-1px); box-shadow:var(--shadow-strong)}
+  .btn:active{transform:translateY(1px); box-shadow:none}
+  .btn.sm{padding:8px 10px;border-radius:10px;font-weight:600}
+  .btn.block{width:100%;justify-content:center}
+  .btn-primary{background:linear-gradient(180deg,#2563eb,#1e40af); border-color:#2643a5}
+  .btn-success{background:linear-gradient(180deg,#16a34a,#166534); border-color:#1f7a49}
+  .btn-warn{background:linear-gradient(180deg,#f59e0b,#b45309); border-color:#b45309}
+  .btn-ghost{background:#0f1626; border-color:var(--line)}
+  .btn[disabled]{opacity:.6; cursor:not-allowed; transform:none; box-shadow:none}
+  .btn-group{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2>GCC Maps Scraper — Final</h2>
+  <div class="row">
+    <div class="card" style="min-width:300px;max-width:430px">
+      <div class="grid">
+        <label>الدولة
+          <select id="country"></select>
+        </label>
+        <label>الكلمات (مفصولة بفواصل)
+          <input id="keywords" placeholder="مطعم, كافيه, صيدلية"/>
+        </label>
+        <label>Step (كثافة الشبكة)
+          <input id="step" type="number" step="0.01" value="0.25"/>
+        </label>
+        <label>Zoom
+          <input id="zoom" type="number" value="15"/>
+        </label>
+        <label>Workers
+          <input id="workers" type="number" value="3" min="1" max="8"/>
+        </label>
+        <label><input type="checkbox" id="aggressive" checked/> Aggressive Grid</label>
+        <label><input type="checkbox" id="headless" checked/> Headless</label>
+        <label><input type="checkbox" id="show_tiles"/> عرض الخريطة داخل Selenium (أبطأ)</label>
 
+        <label>حد أقصى لسحب الصفوف (max_rows)
+          <input id="max_rows" type="number" value="0" min="0" title="0 = بدون حد"/>
+        </label>
+        <label>إجمالي متوقع (expected_total)
+          <input id="expected_total" type="number" value="0" min="0" title="لأغراض عرض التقدّم فقط"/>
+        </label>
+
+        <label>CSV خدمات
+          <input id="svcfile" type="file" accept=".csv,.txt"/>
+        </label>
+        <label>CSV نطاقات إضافية (قرى/أحياء/شوارع)
+          <input id="areasfile" type="file" accept=".csv,.txt"/>
+        </label>
+      </div>
+
+      <div class="btn-group" style="margin-top:10px">
+        <button id="startBtn" class="btn btn-primary">ابدأ</button>
+        <button id="pauseBtn" class="btn btn-warn">إيقاف مؤقت</button>
+        <button id="resumeBtn" class="btn btn-success">استكمال</button>
+      </div>
+
+      <div style="margin-top:10px" class="grid">
+        <label>CPU Target (%)
+          <input id="cpu_target" type="number" min="10" max="95" value="75"/>
+        </label>
+        <button id="applyCpuBtn" class="btn btn-ghost sm" style="align-self:end">تطبيق CPU Target</button>
+
+        <label>تحديث الحدود أثناء التشغيل (لنفس الجوب)
+          <input id="set_expected_total" type="number" min="0" value="0" placeholder="expected_total"/>
+        </label>
+        <div class="grid" style="grid-template-columns:1fr auto;gap:8px">
+          <input id="set_max_rows" type="number" min="0" value="0" placeholder="max_rows"/>
+          <button id="applyExpectedBtn" class="btn btn-ghost sm" title="يتطلب Job ID">تطبيق</button>
+        </div>
+      </div>
+
+      <div class="muted" style="margin-top:8px">Job ID: <span id="job"></span></div>
+      <div class="muted" style="margin-top:4px">نصيحة: لتفعيل الاسترجاع التلقائي عند فتح السيرفر اضبط المتغير <code class="mono">AUTO_RESUME=1</code>.</div>
+    </div>
+
+    <div class="card" style="min-width:320px;flex:2">
+      <div id="map"></div>
+      <div class="controls">
+        <label style="margin:0">تلوين النقاط حسب:
+          <select id="colorBy">
+            <option value="none">بدون</option>
+            <option value="country">الدولة</option>
+            <option value="service">الخدمة</option>
+          </select>
+        </label>
+        <label style="margin:0;flex:1">بحث (الاسم/الخدمة/الدولة):
+          <input id="searchBox" placeholder="اكتب للبحث..." style="width:100%"/>
+        </label>
+      </div>
+      <div id="legend" class="legend"></div>
+
+      <div style="margin-top:10px">
+        <div class="progress"><div id="bar" class="bar"></div></div>
+        <div class="muted">
+          <span id="ptext">0%</span> •
+          <span id="rows">0</span> rows
+          <span id="grandWrap" style="display:none"> • الإجمالي: <span id="grand">0</span></span>
+          • <span id="status">starting…</span>
+        </div>
+        <div id="doneWrap" style="margin-top:10px;display:none">
+          <div style="margin-bottom:6px">اكتمل التحميل ✔️ — اختر صيغة التحميل:</div>
+          <div class="btn-group">
+            <button id="downloadCsvBtn" class="btn sm btn-ghost">CSV</button>
+            <button id="downloadXlsxBtn" class="btn sm btn-ghost">XLSX</button>
+            <button id="downloadTxtBtn" class="btn sm btn-ghost">TXT</button>
+            <button id="downloadViewBtn" class="btn sm btn-success" title="تحميل الصفوف المعروضة حالياً بعد البحث/الفرز">تحميل المعروض (CSV)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- رفع الداتا القديمة -->
+  <div class="card" style="margin-top:12px">
+    <h3 style="margin:0 0 8px 0">رفع داتا قديمة (CSV) لإضافتها</h3>
+    <div class="row" style="align-items:flex-end;gap:8px">
+      <label style="min-width:260px">اختر ملف CSV قديم
+        <input id="oldCsvFile" type="file" accept=".csv,.txt"/>
+      </label>
+      <label><input type="checkbox" id="attachToJobChk" checked/> إلحاق الصفوف بالجوب الحالي (لو متاح)</label>
+      <div class="btn-group">
+        <button id="uploadOldBtn" class="btn btn-primary sm">رفع الداتا القديمة</button>
+        <button id="loadUploadedBtn" class="btn btn-ghost sm" title="عرض الداتا التي رُفعت سابقًا">عرض المرفوع سابقًا</button>
+      </div>
+    </div>
+    <div id="oldCsvResult" class="mono" style="margin-top:8px;white-space:pre-wrap;background:#0f1626;border:1px solid var(--line);border-radius:10px;padding:8px;display:none"></div>
+    <div id="uploadedRowsWrap" style="margin-top:8px;display:none">
+      <div class="muted" style="margin-bottom:6px">عرض سريع لأول 20 صف من الداتا المرفوعة مسبقًا:</div>
+      <div id="uploadedRows" class="mono" style="white-space:pre-wrap;background:#0f1626;border:1px solid var(--line);border-radius:10px;padding:8px"></div>
+    </div>
+  </div>
+
+  <!-- الجدول الرئيسي -->
+  <div class="card" style="margin-top:12px">
+    <table>
+      <thead>
+        <tr>
+          <th class="num sortable" data-key="lng">Lng <span class="arrow">↕</span></th>
+          <th class="num sortable" data-key="lat">Lat <span class="arrow">↕</span></th>
+          <th class="sortable" data-key="name">الاسم <span class="arrow">↕</span></th>
+          <th class="sortable" data-key="service">الخدمة <span class="arrow">↕</span></th>
+          <th class="sortable" data-key="country">الدولة <span class="arrow">↕</span></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let map, markers=[], JOB_ID=null, COUNTRY_BOUNDS={};
+let ALL_ROWS = [];
+let FILTER_TEXT = '';
+let SORT_KEY = null;
+let SORT_DIR = 1;
+let COLOR_BY = 'none';
+let uploadedLayer = null;
+let _lastMarkerCount = 0;
+
+const COLOR_MAP = {};
+const PALETTE = ['#4ade80','#60a5fa','#f472b6','#f59e0b','#34d399','#a78bfa','#22d3ee','#fb7185','#f97316','#38bdf8','#84cc16','#e879f9','#10b981','#ef4444','#eab308'];
+
+function colorFor(key){ if(!key) return '#3aa675'; if(!(key in COLOR_MAP)){ const i=Object.keys(COLOR_MAP).length%PALETTE.length; COLOR_MAP[key]=PALETTE[i]; } return COLOR_MAP[key]; }
+function buildLegend(keys){ const cont=document.getElementById('legend'); cont.innerHTML=''; if(COLOR_BY==='none') return; keys.slice(0,20).forEach(k=>{ const d=document.createElement('div'); d.className='item'; d.innerHTML=`<span class="dot" style="background:${colorFor(k)}"></span><span>${k||'غير محدد'}</span>`; cont.appendChild(d); }); }
+
+function fitBoundsFor(code){
+  if(!map) return;
+  const b = COUNTRY_BOUNDS[code];
+  if(!b){ map.setView([24.4539,54.3773], 6); setTimeout(()=>map.invalidateSize(), 250); return; }
+  map.fitBounds([[b.min_lat,b.min_lng],[b.max_lat,b.max_lng]]);
+  setTimeout(()=>map.invalidateSize(), 250);
+}
+function addMarker(lat,lng,options={}){ const m=L.circleMarker([lat,lng],Object.assign({radius:3},options)); m.addTo(map); markers.push(m); }
+
+function extractLatLng(obj){
+  const latKeys=['lat','Lat','latitude','Latitude','y','Y','lat_deg','خط العرض'];
+  const lngKeys=['lng','Lng','lon','Lon','longitude','Longitude','x','X','long','lng_deg','خط الطول'];
+  let lat=null,lng=null;
+  for(const k of latKeys){ if(k in obj && obj[k]!=null && obj[k]!==''){ const v=Number(String(obj[k]).replace(',','.')); if(!Number.isNaN(v)){ lat=v; break; } } }
+  for(const k of lngKeys){ if(k in obj && obj[k]!=null && obj[k]!==''){ const v=Number(String(obj[k]).replace(',','.')); if(!Number.isNaN(v)){ lng=v; break; } } }
+  if(!(typeof lat==='number'&&lat>=-90&&lat<=90)) lat=null;
+  if(!(typeof lng==='number'&&lng>=-180&&lng<=180)) lng=null;
+  return {lat,lng};
+}
+function fmt(n){ return (typeof n==='number'&&!Number.isNaN(n))? n.toFixed(6):''; }
+
+function filterRows(rows){
+  if(!FILTER_TEXT) return rows;
+  const q = FILTER_TEXT.trim().toLowerCase();
+  return rows.filter(r=>{
+    return (r.name||'').toLowerCase().includes(q) ||
+           (r.service||'').toLowerCase().includes(q) ||
+           (r.country||'').toLowerCase().includes(q);
+  });
+}
+function normalizeRow(r){ const {lat,lng}=extractLatLng(r); return {lat,lng,name:r.name||'',service:r.service||'',country:r.country||''}; }
+function sortRows(rows){
+  if(!SORT_KEY) return rows;
+  return rows.slice().sort((a,b)=>{
+    const A=a[SORT_KEY], B=b[SORT_KEY];
+    if(typeof A==='number' && typeof B==='number') return (A-B)*SORT_DIR;
+    return String(A).localeCompare(String(B),'ar')*SORT_DIR;
+  });
+}
+function fitToMarkersOnce(){
+  const count = markers.length;
+  if(_lastMarkerCount===0 && count>0){
+    const group = L.featureGroup(markers);
+    const b = group.getBounds();
+    if(b && b.isValid()) map.fitBounds(b.pad(0.2));
+  }
+  _lastMarkerCount = count;
+}
+function render(){
+  const tb=document.getElementById('tbody'); tb.innerHTML='';
+  markers.forEach(m=>m.remove()); markers=[];
+  const norm=ALL_ROWS.map(normalizeRow);
+  const filtered=filterRows(norm);
+  const sorted=sortRows(filtered);
+  if(COLOR_BY!=='none'){
+    const keys=Array.from(new Set(sorted.map(r=>COLOR_BY==='country'?r.country:r.service))).filter(Boolean);
+    buildLegend(keys);
+  }else buildLegend([]);
+  sorted.slice(-600).forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td class="num">${fmt(r.lng)}</td><td class="num">${fmt(r.lat)}</td><td>${r.name}</td><td>${r.service}</td><td>${r.country}</td>`;
+    tb.appendChild(tr);
+    if(r.lat!=null&&r.lng!=null){
+      let fill='#3aa675';
+      if(COLOR_BY==='country') fill=colorFor(r.country||'');
+      else if(COLOR_BY==='service') fill=colorFor(r.service||'');
+      addMarker(r.lat,r.lng,{color:fill,fillColor:fill,fillOpacity:.9});
+    }
+  });
+  fitToMarkersOnce();
+}
+
+// الصفوف الحالية (بعد البحث/الفرز)
+function getCurrentViewRows(){
+  const norm=ALL_ROWS.map(normalizeRow);
+  const filtered=filterRows(norm);
+  const sorted=sortRows(filtered);
+  return sorted;
+}
+
+// تنزيل CSV للمعروض فقط
+function downloadFilteredCsv(){
+  const rows=getCurrentViewRows();
+  const header=['Lng','Lat','الاسم','الخدمة','الدولة'];
+  const lines=[header.join(',')];
+  rows.forEach(r=>{
+    const row=[fmt(r.lng),fmt(r.lat),
+      `"${String(r.name).replace(/"/g,'""')}"`,
+      `"${String(r.service).replace(/"/g,'""')}"`,
+      `"${String(r.country).replace(/"/g,'""')}"`];
+    lines.push(row.join(','));
+  });
+  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`filtered_view_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ---- network helpers ----
+async function uploadCSV(inputId,url){
+  const inp=document.getElementById(inputId);
+  if(!inp.files||!inp.files[0]) return null;
+  const fd=new FormData(); fd.append('file',inp.files[0]);
+  const r=await fetch(url,{method:'POST',body:fd}); return r.json();
+}
+
+async function updateRowsOnce(){
+  if(!JOB_ID) return;
+  const rr=await fetch('/rows/'+JOB_ID+'.json');
+  if(!rr.ok) return;
+  const data=await rr.json();
+  ALL_ROWS=Array.isArray(data)?data:[];
+  render();
+}
+
+// ---- app flow ----
+async function startJob(){
+  await uploadCSV('svcfile','/upload_keywords');
+  const areas=await uploadCSV('areasfile','/upload_areas_csv'); const areas_text=areas&&areas.text?areas.text:'';
+  const payload={
+    country:document.getElementById('country').value,
+    keywords:document.getElementById('keywords').value,
+    step:parseFloat(document.getElementById('step').value||'0.25'),
+    zoom:parseInt(document.getElementById('zoom').value||'15'),
+    workers:parseInt(document.getElementById('workers').value||'3'),
+    aggressive:document.getElementById('aggressive').checked,
+    headless:document.getElementById('headless').checked,
+    show_tiles:document.getElementById('show_tiles').checked,
+    areas_text:'',
+    areas_csv_text:areas_text,
+    // الإضافات الجديدة:
+    max_rows: parseInt(document.getElementById('max_rows').value||'0'),
+    expected_total: parseInt(document.getElementById('expected_total').value||'0'),
+  };
+  const r=await fetch('/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const j=await r.json(); JOB_ID=j.job_id; document.getElementById('job').textContent=JOB_ID;
+  ALL_ROWS=[]; document.getElementById('tbody').innerHTML=''; markers.forEach(m=>m.remove()); markers=[]; _lastMarkerCount=0;
+}
+
+async function pauseJob(){ if(!JOB_ID) return; await fetch('/pause/'+JOB_ID,{method:'POST'}); }
+async function resumeJob(){ if(!JOB_ID) return; await fetch('/resume/'+JOB_ID,{method:'POST'}); }
+
+// === CPU Target ===
+async function applyCpu(){
+  const v = parseInt(document.getElementById('cpu_target').value||'75');
+  if(Number.isNaN(v)||v<10||v>95){ alert('اختر قيمة بين 10 و 95'); return; }
+  const r = await fetch('/cpu_target',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cpu_target:v})});
+  if(r.ok){ alert('تم تطبيق CPU Target'); } else { alert('تعذر تطبيق القيمة'); }
+}
+
+// === تحديث caps أثناء التشغيل للجوب الحالي ===
+async function applyExpected(){
+  if(!JOB_ID){ alert('لا يوجد Job ID بعد. ابدأ جوب أولاً.'); return; }
+  const expected = parseInt(document.getElementById('set_expected_total').value||'0');
+  const cap      = parseInt(document.getElementById('set_max_rows').value||'0');
+  const r = await fetch('/set_expected',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job_id:JOB_ID, expected_total:expected, max_rows:cap})});
+  if(r.ok){ alert('تم التحديث.'); } else { alert('تعذر التحديث.'); }
+}
+
+// === رفع الداتا القديمة: عرض فوري على الخريطة والجدول ===
+async function uploadOldCSV(){
+  const fileInp=document.getElementById('oldCsvFile');
+  const out=document.getElementById('oldCsvResult');
+  out.style.display='none'; out.textContent='';
+  if(!fileInp.files||!fileInp.files[0]){ alert('اختَر ملف CSV أولاً'); return; }
+
+  const fd=new FormData(); fd.append('file',fileInp.files[0]);
+  const attach=document.getElementById('attachToJobChk').checked;
+  if(attach&&JOB_ID){ fd.append('job_id',JOB_ID); }
+
+  try{
+    const res=await fetch('/upload_csv',{method:'POST',body:fd});
+    const text=await res.text(); let data; try{ data=JSON.parse(text);}catch{ data={raw:text}; }
+    out.style.display='block'; out.textContent=JSON.stringify(data,null,2);
+
+    if(res.ok&&data.ok){
+      const jobForView = (attach&&JOB_ID) ? JOB_ID : (data.job_id || "_uploaded_data_");
+
+      // 1) نقاط GeoJSON فوراً
+      try{
+        const gj = await (await fetch(`/features/${jobForView}.geojson`)).json();
+        if(uploadedLayer) { map.removeLayer(uploadedLayer); uploadedLayer=null; }
+        uploadedLayer = L.geoJSON(gj, {
+          pointToLayer: (feat, latlng) => {
+            const fill = COLOR_BY==='country' ? colorFor(feat.properties?.country||'')
+                       : COLOR_BY==='service' ? colorFor(feat.properties?.service||'')
+                       : '#3aa675';
+            return L.circleMarker(latlng,{radius:3,color:fill,fillColor:fill,fillOpacity:.9});
+          }
+        }).addTo(map);
+        const b = uploadedLayer.getBounds(); if(b && b.isValid()) map.fitBounds(b.pad(0.2));
+      }catch(_){}
+
+      // 2) حدّث الجدول والـ markers من /rows بعد التطبيع
+      try{
+        const rr = await fetch(`/rows/${jobForView}.json`);
+        const rows = rr.ok ? await rr.json() : [];
+        if(attach && JOB_ID===jobForView){
+          ALL_ROWS = Array.isArray(rows)? rows : [];
+        }else{
+          ALL_ROWS = ALL_ROWS.concat(Array.isArray(rows)? rows : []);
+        }
+        render();
+      }catch(_){}
+
+      alert(`تم رفع ${data.count} صف بنجاح${attach&&JOB_ID? ' وربطها بالجوب '+JOB_ID : ''}.`);
+    }else{
+      alert('فشل رفع الداتا القديمة. راجع التفاصيل المعروضة.');
+    }
+  }catch(e){
+    out.style.display='block'; out.textContent=String(e);
+    alert('حدث خطأ غير متوقع أثناء الرفع.');
+  }
+}
+
+async function loadPreviouslyUploaded(){
+  const wrap=document.getElementById('uploadedRowsWrap');
+  const box=document.getElementById('uploadedRows');
+  wrap.style.display='none'; box.textContent='';
+  try{
+    const res=await fetch('/rows/uploaded.json');
+    if(!res.ok){ alert('تعذّر تحميل الداتا المرفوعة سابقًا'); return; }
+    const rows=await res.json();
+    const view=rows.slice(0,20);
+    box.textContent=JSON.stringify(view,null,2)+(rows.length>20?`\n... (+${rows.length-20} أخرى)`: '');
+    wrap.style.display='block';
+  }catch(e){ alert('حدث خطأ أثناء جلب الداتا المرفوعة.'); }
+}
+
+async function poll(){
+  try{
+    if(JOB_ID){
+      const r=await fetch('/progress/'+JOB_ID);
+      if(r.ok){
+        const j=await r.json();
+        document.getElementById('bar').style.width=(j.percent||0)+'%';
+        document.getElementById('ptext').textContent=(j.percent||0)+'%';
+        document.getElementById('rows').textContent=j.rows||0;
+        if(typeof j.grand_rows==='number'){
+          document.getElementById('grandWrap').style.display='inline';
+          document.getElementById('grand').textContent=j.grand_rows;
+        }
+        document.getElementById('status').textContent=j.status||'';
+        document.getElementById('doneWrap').style.display=(j.status==='done')?'block':'none';
+
+        const rr=await fetch('/rows/'+JOB_ID+'.json');
+        if(rr.ok){ const data=await rr.json(); ALL_ROWS=Array.isArray(data)?data:[]; render(); }
+      }
+    }
+  }catch(e){}
+  setTimeout(poll,1200);
+}
+
+async function init(){
+  map=L.map('map',{zoomControl:true,attributionControl:false});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);
+
+  const r=await fetch('/meta'); const meta=await r.json();
+  COUNTRY_BOUNDS=meta.bounds||{};
+  const sel=document.getElementById('country');
+  (meta.countries||[]).forEach(c=>{ const opt=document.createElement('option'); opt.value=c.code; opt.textContent=c.label; sel.appendChild(opt); });
+  sel.value='UAE'; fitBoundsFor('UAE');
+  sel.addEventListener('change',e=>fitBoundsFor(e.target.value));
+
+  document.getElementById('startBtn').onclick=startJob;
+  document.getElementById('pauseBtn').onclick=pauseJob;
+  document.getElementById('resumeBtn').onclick=resumeJob;
+  document.getElementById('downloadCsvBtn').onclick=()=>{ if(JOB_ID) window.location = '/download/'+JOB_ID+'.csv' };
+  document.getElementById('downloadXlsxBtn').onclick=()=>{ if(JOB_ID) window.location = '/download/'+JOB_ID+'.xlsx' };
+  document.getElementById('downloadTxtBtn').onclick=()=>{ if(JOB_ID) window.location = '/download/'+JOB_ID+'.txt' };
+  document.getElementById('downloadViewBtn').onclick=downloadFilteredCsv;
+
+  document.getElementById('applyCpuBtn').onclick=applyCpu;
+  document.getElementById('applyExpectedBtn').onclick=applyExpected;
+
+  document.getElementById('uploadOldBtn').onclick=uploadOldCSV;
+  document.getElementById('loadUploadedBtn').onclick=loadPreviouslyUploaded;
+
+  const searchBox=document.getElementById('searchBox'); let t=null;
+  searchBox.addEventListener('input',()=>{ clearTimeout(t); t=setTimeout(()=>{ FILTER_TEXT=searchBox.value; render(); },180); });
+  document.getElementById('colorBy').addEventListener('change', (e)=>{ COLOR_BY=e.target.value; render(); });
+  document.querySelectorAll('th.sortable').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const key=th.getAttribute('data-key');
+      if(SORT_KEY===key){ SORT_DIR*=-1; } else { SORT_KEY=key; SORT_DIR=1; }
+      render();
+    });
+  });
+
+  poll();
+}
+
+init();
+</script>
+</body>
+</html>
